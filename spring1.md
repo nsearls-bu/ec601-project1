@@ -36,6 +36,8 @@ Run the entire system on a single machine as a prototype.
 
 ## Sprint 3 Plans
 
+Implement the following user stories and prepare system for distributed deployment.
+
 ### Scalability and Performance:
     As a network engineer, I want to ensure the system performs without significant impact under load, and it can scale efficiently when deployed in larger environments.
 
