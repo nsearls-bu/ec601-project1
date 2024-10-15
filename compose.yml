@@ -50,6 +50,21 @@ services:
     depends_on:
       - zookeeper
 
+  kafka-init:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka-init
+    depends_on:
+      - kafka
+    command: >
+      bash -c "
+        while ! nc -z kafka 9092; do   
+          echo 'Waiting for Kafka...';
+          sleep 2;
+        done;
+
+        kafka-topics --create --bootstrap-server kafka:9092 --replication-factor 1 --partitions 1 --topic postgres;
+      "
+
 volumes:
   postgres_data:
   neo4j_data:
