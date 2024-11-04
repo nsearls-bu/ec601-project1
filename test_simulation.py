@@ -2,8 +2,7 @@
 
 import time
 import pytest
-import psycopg2
-from neo4j import GraphDatabase
+
 
 def insert_into_postgres(cursor, table_name, data):
     """

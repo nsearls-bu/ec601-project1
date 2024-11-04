@@ -5,8 +5,7 @@ import time
 from contextlib import contextmanager
 import pytest
 import psycopg2
-from neo4j import GraphDatabase
-from kafka import KafkaProducer, KafkaConsumer
+
 
 def trigger_exists(postgres_connection, trigger_name, table_name):
     """

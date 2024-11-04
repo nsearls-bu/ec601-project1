@@ -1,3 +1,5 @@
+'''Creates and init postgres db schema'''
+
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -11,7 +13,17 @@ Base = declarative_base()
 Session = sessionmaker(bind=engine)
 session = Session()
 
-class User(Base):
+class User(Base):  # pylint: disable=too-few-public-methods
+    """
+    Represents a user in the system.
+
+    Attributes:
+        id (int): Primary key for the user.
+        name (str): Name of the user.
+        email (str): Email address of the user, unique to each user.
+        shipping_address (str): Shipping address of the user.
+        orders (list): List of orders associated with the user.
+    """
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     name = Column(String)
@@ -20,7 +32,17 @@ class User(Base):
 
     orders = relationship('Order', back_populates='user')
 
-class Inventory(Base):
+class Inventory(Base):  # pylint: disable=too-few-public-methods
+    """
+    Represents an item in the inventory.
+
+    Attributes:
+        id (int): Primary key for the inventory item.
+        item_name (str): Name of the item.
+        quantity (int): Quantity of the item in stock.
+        price (float): Price of the item.
+        orders (list): List of orders associated with the item.
+    """
     __tablename__ = 'inventory'
     id = Column(Integer, primary_key=True)
     item_name = Column(String)
@@ -29,7 +51,18 @@ class Inventory(Base):
 
     orders = relationship('Order', back_populates='item')
 
-class Order(Base):
+class Order(Base):  # pylint: disable=too-few-public-methods
+    """
+    Represents an order in the system.
+
+    Attributes:
+        id (int): Primary key for the order.
+        user_id (int): Foreign key to associate with a user.
+        item_id (int): Foreign key to associate with an item.
+        status (str): Status of the order, e.g., 'fulfilled', 'shipped', 'delivered'.
+        user (User): User who placed the order.
+        item (Inventory): Item in the inventory that was ordered.
+    """
     __tablename__ = 'orders'
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'))
@@ -42,6 +75,11 @@ class Order(Base):
 Base.metadata.create_all(engine)
 
 def load_data():
+    """
+    Loads sample data into the database.
+    
+    Adds sample users, items in inventory, and orders, and commits them to the database.
+    """
     user1 = User(name="John Doe", email="john@example.com", shipping_address="123 Elm St")
     user2 = User(name="Jane Smith", email="jane@example.com", shipping_address="456 Oak St")
 
