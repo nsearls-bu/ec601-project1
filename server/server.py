@@ -38,33 +38,128 @@ def get_postgres_tables():
         tables = cursor.fetchall()
     return [table[0] for table in tables]
 
-def setup_postgres_trigger_for_table(table_name):
-    """Set up PostgreSQL trigger for a given table"""
+
+def setup_postgres_trigger_for_table(pg_conn, table_name):
+    """
+    Set up PostgreSQL trigger for a given table with comprehensive verification.
+    
+    Args:
+        pg_conn: PostgreSQL connection object
+        table_name (str): Name of the table to create trigger for
+        
+    Raises:
+        Exception: If trigger creation fails or verification fails
+    """
     with pg_conn.cursor() as cursor:
         trigger_name = f"{table_name}_update_trigger"
         function_name = f"notify_{table_name}_update"
+        
+        try:
+            # First verify the table exists
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 
+                    FROM information_schema.tables 
+                    WHERE table_name = %s
+                );
+            """, (table_name,))
+            
+            if not cursor.fetchone()[0]:
+                raise Exception(f"Table '{table_name}' does not exist")
+            
+            # Create or replace the notification function
+            cursor.execute(f"""
+                CREATE OR REPLACE FUNCTION {function_name}()
+                RETURNS trigger AS $$
+                BEGIN
+                    PERFORM pg_notify(
+                        'table_update',
+                        json_build_object(
+                            'table', TG_TABLE_NAME,
+                            'operation', TG_OP,
+                            'data', row_to_json(NEW),
+                            'timestamp', CURRENT_TIMESTAMP
+                        )::text
+                    );
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+            
+            # Drop existing trigger if it exists
+            cursor.execute(f"""
+                DROP TRIGGER IF EXISTS {trigger_name} ON {table_name};
+            """)
+            
+            # Create the new trigger
+            cursor.execute(f"""
+                CREATE TRIGGER {trigger_name}
+                AFTER INSERT OR UPDATE ON {table_name}
+                FOR EACH ROW
+                EXECUTE FUNCTION {function_name}();
+            """)
+            
+            # Commit the changes
+            pg_conn.commit()
+            
+            # Verify function exists
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 
+                    FROM pg_proc 
+                    WHERE proname = %s
+                );
+            """, (function_name,))
+            
+            if not cursor.fetchone()[0]:
+                raise Exception(f"Function '{function_name}' was not created properly")
+            
+            # Verify trigger exists and is enabled
+            cursor.execute("""
+                SELECT 
+                    EXISTS (
+                        SELECT 1 
+                        FROM pg_trigger 
+                        WHERE tgname = %s 
+                        AND tgrelid = %s::regclass
+                        AND tgenabled = 'O'
+                    );
+            """, (trigger_name, table_name))
+            
+            if not cursor.fetchone()[0]:
+                raise Exception(
+                    f"Trigger '{trigger_name}' was not created or is not enabled "
+                    f"on table '{table_name}'"
+                )
+            
+            print(f"✓ Successfully created trigger and function for table: {table_name}")
+            print(f"  - Trigger: {trigger_name}")
+            print(f"  - Function: {function_name}")
+            
+            # Return the names for potential future reference
+            return {
+                'trigger_name': trigger_name,
+                'function_name': function_name
+            }
+            
+        except Exception as e:
+            pg_conn.rollback()
+            error_msg = (f"Failed to create trigger for table '{table_name}': "
+                        f"{str(e)}")
+            print(f"✗ {error_msg}")
+            raise Exception(error_msg) from e
 
-        cursor.execute(f"""
-        CREATE OR REPLACE FUNCTION {function_name}() RETURNS trigger AS $$
-        BEGIN
-            PERFORM pg_notify('table_update', row_to_json(NEW)::text);
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql;
 
-        DROP TRIGGER IF EXISTS {trigger_name} ON {table_name};
-        CREATE TRIGGER {trigger_name}
-        AFTER INSERT OR UPDATE ON {table_name}
-        FOR EACH ROW EXECUTE FUNCTION {function_name}();
-        """)
-        pg_conn.commit()
 
 def setup_postgres_triggers():
-    """Set up PostgreSQL triggers for all tables in the schema"""
+    """Set up PostgreSQL triggers for all tables in the schema with verification."""
     tables = get_postgres_tables()
     for table in tables:
-        setup_postgres_trigger_for_table(table)
-        print(f"Trigger set up for table: {table}")
+        try:
+            setup_postgres_trigger_for_table(pg_conn,table)
+        except Exception as e:
+            print(f"Error setting up trigger for table {table}: {e}")
+            raise
 
 def postgres_notify():
     """Function to notify Kafka of updates in PostgreSQL"""
