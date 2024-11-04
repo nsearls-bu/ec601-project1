@@ -1,11 +1,17 @@
-import pytest
+'''E2E test of inserting into postgres and checking Neo4J'''
 
 import time
+import pytest
+import psycopg2
+from neo4j import GraphDatabase
 
 
-@pytest.fixture
-def postgres_connection():
-    import psycopg2
+@pytest.fixture(name="postgres_connection")
+def fixure_postgres_connection():
+    """
+    Fixture for setting up a PostgreSQL connection. Yields an active connection to the database
+    and closes it after the test is complete.
+    """
     conn = psycopg2.connect(
         dbname="db",
         user="user",
@@ -16,38 +22,71 @@ def postgres_connection():
     yield conn
     conn.close()
 
-@pytest.fixture
-def neo4j_session():
-    from neo4j import GraphDatabase
+@pytest.fixture(name="neo4j_session")
+def fixture_neo4j_session():
+    """
+    Fixture for setting up a Neo4j session. Yields an active session to the Neo4j database
+    and closes it after the test is complete.
+    """
     driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "password"))
     session = driver.session()
     yield session
     session.close()
     driver.close()
 
-
-@pytest.fixture(autouse=True)
-def cleanup_tables(postgres_connection):
+@pytest.fixture(name="cleanup_tables", autouse=True)
+def fixture_cleanup_tables(postgres_connection):
+    """
+    Automatically cleans up tables in PostgreSQL before each test by truncating `users`,
+    `orders`, and `inventory` tables.
+    """
     with postgres_connection.cursor() as cursor:
         cursor.execute("TRUNCATE users, orders, inventory CASCADE")
         postgres_connection.commit()
 
 def insert_into_postgres(cursor, table_name, data):
+    """
+    Inserts a row into a specified PostgreSQL table.
+
+    Args:
+        cursor: The database cursor for executing SQL commands.
+        table_name (str): The name of the table to insert data into.
+        data (tuple): The data to insert as a tuple.
+    """
     placeholders = ', '.join(['%s'] * len(data))
     query = f"INSERT INTO {table_name} VALUES ({placeholders})"
     cursor.execute(query, data)
 
 def check_in_neo4j(session, query, parameters):
+    """
+    Checks for the existence of a node in Neo4j by running a specified query.
+
+    Args:
+        session: The Neo4j session to execute the query.
+        query (str): The Cypher query to check node existence.
+        parameters (dict): Parameters to pass to the Cypher query.
+
+    Returns:
+        bool: True if the node exists, False otherwise.
+    """
     result = session.run(query, parameters)
     return result.single() is not None
 
-# Test function to verify synchronization
 @pytest.mark.parametrize("entry", [
     (1, 'Alice', 'example@test.com'),
     (2, 'Bob', 'bob@test.com'),
     (3, 'Charlie', 'charlie@test.com')
 ])
 def test_data_sync(postgres_connection, neo4j_session, entry):
+    """
+    Tests data synchronization between PostgreSQL and Neo4j by inserting a user into
+    PostgreSQL and checking if it appears in Neo4j after a brief delay.
+
+    Args:
+        postgres_connection: The PostgreSQL connection fixture.
+        neo4j_session: The Neo4j session fixture.
+        entry (tuple): The user entry to be inserted, including user ID, name, and email.
+    """
     table_name = 'users'
     neo4j_check_query = "MATCH (n:User {id: $id}) RETURN n"
 
@@ -55,7 +94,7 @@ def test_data_sync(postgres_connection, neo4j_session, entry):
         insert_into_postgres(cursor, table_name, entry)
         postgres_connection.commit()
 
-    time.sleep(2) 
+    time.sleep(2)  # Wait for data sync
 
     check_params = {'id': entry[0]}
     is_synced = check_in_neo4j(neo4j_session, neo4j_check_query, check_params)

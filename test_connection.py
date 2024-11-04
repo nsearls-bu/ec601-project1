@@ -1,14 +1,21 @@
-import pytest
+'''Test the kafka connectin between postgres and Neo4J'''
+
 import json
 import select
 import time
 from contextlib import contextmanager
-from psycopg2.errors import UniqueViolation, ForeignKeyViolation
-from server.server import initial_sync
+import pytest
+import psycopg2
+from neo4j import GraphDatabase
+from kafka import KafkaProducer, KafkaConsumer
 
-@pytest.fixture
-def postgres_connection():
-    import psycopg2
+
+@pytest.fixture(name="postgres_connection")
+def fixture_postgres_connection():
+    """
+    Fixture for setting up a PostgreSQL connection. Yields an active connection
+    and closes it after the test completes.
+    """
     conn = psycopg2.connect(
         dbname="db",
         user="user",
@@ -19,24 +26,37 @@ def postgres_connection():
     yield conn
     conn.close()
 
-@pytest.fixture(autouse=True)
-def cleanup_tables(postgres_connection):
+
+@pytest.fixture(autouse=True, name="cleanup_tables")
+def fixtures_cleanup_tables(postgres_connection):
+    """
+    Automatically cleans up tables in PostgreSQL before each test by truncating
+    `users`, `orders`, and `inventory` tables.
+    """
     with postgres_connection.cursor() as cursor:
         cursor.execute("TRUNCATE users, orders, inventory CASCADE")
         postgres_connection.commit()
 
-@pytest.fixture
-def neo4j_session():
-    from neo4j import GraphDatabase
+
+@pytest.fixture(name="neo4j_session")
+def fixture_neo4j_session():
+    """
+    Fixture for setting up a Neo4j session. Yields an active session and
+    closes it after the test completes.
+    """
     driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "password"))
     session = driver.session()
     yield session
     session.close()
     driver.close()
 
-@pytest.fixture
-def kafka_producer():
-    from kafka import KafkaProducer
+
+@pytest.fixture(name="kafka_producer")
+def fixture_kafka_producer():
+    """
+    Fixture for setting up a Kafka producer. Yields an active producer and
+    closes it after the test completes.
+    """
     producer = KafkaProducer(
         bootstrap_servers=['localhost:9092'],
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -44,9 +64,13 @@ def kafka_producer():
     yield producer
     producer.close()
 
-@pytest.fixture
-def kafka_consumer():
-    from kafka import KafkaConsumer
+
+@pytest.fixture(name="kafka_consumer")
+def fixture_kafka_consumer():
+    """
+    Fixture for setting up a Kafka consumer. Yields an active consumer and
+    closes it after the test completes.
+    """
     consumer = KafkaConsumer(
         'postgres_updates',
         bootstrap_servers=['localhost:9092'],
@@ -57,7 +81,20 @@ def kafka_consumer():
     yield consumer
     consumer.close()
 
+
+
 def trigger_exists(postgres_connection, trigger_name, table_name):
+    """
+    Checks if a specified trigger exists on a given table in PostgreSQL.
+
+    Args:
+        postgres_connection: The PostgreSQL connection fixture.
+        trigger_name (str): Name of the trigger to check.
+        table_name (str): Name of the table the trigger should exist on.
+
+    Returns:
+        bool: True if the trigger exists, False otherwise.
+    """
     with postgres_connection.cursor() as cursor:
         cursor.execute("""
         SELECT EXISTS (
@@ -67,9 +104,18 @@ def trigger_exists(postgres_connection, trigger_name, table_name):
         """, (trigger_name, table_name))
         return cursor.fetchone()[0]
 
+
 @contextmanager
 def get_notification_listener(dsn):
-    import psycopg2
+    """
+    Context manager to set up a listener for PostgreSQL notifications.
+
+    Args:
+        dsn (str): The database source name for connecting to PostgreSQL.
+
+    Yields:
+        listen_conn: A connection that listens for notifications.
+    """
     listen_conn = psycopg2.connect(dsn)
     try:
         listen_conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
@@ -77,7 +123,15 @@ def get_notification_listener(dsn):
     finally:
         listen_conn.close()
 
+
 def test_postgres_trigger(postgres_connection):
+    """
+    Test to verify that the trigger on the `users` table in PostgreSQL works by listening
+    for a notification after an INSERT operation.
+
+    Args:
+        postgres_connection: The PostgreSQL connection fixture.
+    """
     trigger_name = "users_update_trigger"
     table_name = "users"
     with postgres_connection.cursor() as cursor:
@@ -95,22 +149,24 @@ def test_postgres_trigger(postgres_connection):
             listen_cursor.execute("LISTEN table_update;")
             with postgres_connection.cursor() as trigger_cursor:
                 try:
-                    trigger_cursor.execute("INSERT INTO users (id, name) VALUES (1, 'Test User') RETURNING id, name")
+                    trigger_cursor.execute('''INSERT INTO users (id, name) VALUES
+                                           (1, 'Test User') RETURNING id, name''')
                     postgres_connection.commit()
-                except Exception as e:
-                    pytest.fail(f"Failed to insert data: {e}")
+                except Exception as error: # pylint: disable=broad-exception-caught
+                    pytest.fail(f"Failed to insert data: {error}")
 
                 max_attempts = 5
                 notification_received = False
-                for attempt in range(max_attempts):
+                for _ in range(max_attempts):
                     if select.select([listen_conn], [], [], 1) != ([], [], []):
                         listen_conn.poll()
                         while listen_conn.notifies:
                             notify = listen_conn.notifies.pop(0)
-                            assert 'Test User' in notify.payload, f"Expected 'Test User' in payload, got '{notify.payload}'"
+                            assert 'Test User' in notify.payload, f'''
+                            Expected 'Test User' in payload, got "{notify.payload}"'''
                             notification_received = True
                         if notification_received:
                             break
                     time.sleep(0.2)
-                
+
                 assert notification_received, "Notification for INSERT was not received."
