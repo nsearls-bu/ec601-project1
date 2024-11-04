@@ -5,45 +5,6 @@ import pytest
 import psycopg2
 from neo4j import GraphDatabase
 
-
-@pytest.fixture(name="postgres_connection")
-def fixure_postgres_connection():
-    """
-    Fixture for setting up a PostgreSQL connection. Yields an active connection to the database
-    and closes it after the test is complete.
-    """
-    conn = psycopg2.connect(
-        dbname="db",
-        user="user",
-        password="mypassword",
-        host="localhost",
-        port="5430"
-    )
-    yield conn
-    conn.close()
-
-@pytest.fixture(name="neo4j_session")
-def fixture_neo4j_session():
-    """
-    Fixture for setting up a Neo4j session. Yields an active session to the Neo4j database
-    and closes it after the test is complete.
-    """
-    driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "password"))
-    session = driver.session()
-    yield session
-    session.close()
-    driver.close()
-
-@pytest.fixture(name="cleanup_tables", autouse=True)
-def fixture_cleanup_tables(postgres_connection):
-    """
-    Automatically cleans up tables in PostgreSQL before each test by truncating `users`,
-    `orders`, and `inventory` tables.
-    """
-    with postgres_connection.cursor() as cursor:
-        cursor.execute("TRUNCATE users, orders, inventory CASCADE")
-        postgres_connection.commit()
-
 def insert_into_postgres(cursor, table_name, data):
     """
     Inserts a row into a specified PostgreSQL table.
