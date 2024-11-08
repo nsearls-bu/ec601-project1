@@ -1,0 +1,15 @@
+{
+    "name": "pg-orders-source",
+    "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "database.hostname": "postgres",
+        "database.port": "5432",
+        "database.user": "user",
+        "database.password": "mypassword",
+        "database.dbname": "db",
+        "database.server.name": "myserver",
+        "plugin.name": "wal2json",
+        "table.include.list": "public.customers",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter"
+    }
+}

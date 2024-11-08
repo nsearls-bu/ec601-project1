@@ -28,42 +28,48 @@ services:
       - neo4j_plugins:/var/lib/neo4j/plugins
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:latest
+    image: debezium/zookeeper:1.6
     container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "2181:2181"
+      - 2181:2181
 
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: debezium/kafka:1.6
     container_name: kafka
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
       - "9092:9092"
-    depends_on:
+    links:
       - zookeeper
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: ${HOST_IP}
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+      ZOOKEEPER_CONNECT: zookeeper:2181
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    hostname: kafka
 
-  kafka-init:
-    image: confluentinc/cp-kafka:7.4.0
-    container_name: kafka-init
+  # debezium setup: https://medium.com/geekculture/listen-to-database-changes-with-apache-kafka-35440a3344f0
+  debezium:
+    image: debezium/connect:1.6
+    container_name: debezium
+    ports:
+      - 9090:8083
+    links:
+      - kafka
     depends_on:
       - kafka
-    command: >
-      bash -c "
-        while ! nc -z kafka 9092; do   
-          echo 'Waiting for Kafka...';
-          sleep 2;
-        done;
-
-        kafka-topics --create --bootstrap-server kafka:9092 --replication-factor 1 --partitions 1 --topic postgres;
-      "
+      - postgres
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: pg
+      CONFIG_STORAGE_TOPIC: pg_connect_configs
+      OFFSET_STORAGE_TOPIC: pg_connect_offsets
+      STATUS_STORAGE_TOPIC: pg_connect_statuses
 
 volumes:
   postgres_data:
