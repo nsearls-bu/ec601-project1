@@ -1,9 +1,11 @@
 version: '3.8'
 
 services:
+  # command to login: psql -h $HOST_IP -p 5430 -U user -d db
   postgres:
     image: postgres:latest
     container_name: postgres_db
+    hostname: postgres_db
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: mypassword
@@ -16,6 +18,7 @@ services:
   neo4j:
     image: neo4j:latest
     container_name: neo4j_db
+    hostname: neo4j_db
     environment:
       NEO4J_AUTH: neo4j/password
     ports:
@@ -30,6 +33,7 @@ services:
   zookeeper:
     image: debezium/zookeeper:1.6
     container_name: zookeeper
+    hostname: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -39,6 +43,7 @@ services:
   kafka:
     image: debezium/kafka:1.6
     container_name: kafka
+    hostname: kafka
     ports:
       - "9092:9092"
     links:
@@ -51,12 +56,12 @@ services:
       ZOOKEEPER_CONNECT: zookeeper:2181
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    hostname: kafka
 
   # debezium setup: https://medium.com/geekculture/listen-to-database-changes-with-apache-kafka-35440a3344f0
   debezium:
     image: debezium/connect:1.6
     container_name: debezium
+    hostname: debezium
     ports:
       - 9090:8083
     links:
@@ -65,11 +70,11 @@ services:
       - kafka
       - postgres
     environment:
-      BOOTSTRAP_SERVERS: kafka:9092
-      GROUP_ID: pg
-      CONFIG_STORAGE_TOPIC: pg_connect_configs
-      OFFSET_STORAGE_TOPIC: pg_connect_offsets
-      STATUS_STORAGE_TOPIC: pg_connect_statuses
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - GROUP_ID=pg
+      - CONFIG_STORAGE_TOPIC=pg_connect_configs
+      - OFFSET_STORAGE_TOPIC=pg_connect_offsets
+      - STATUS_STORAGE_TOPIC=pg_connect_statuses
 
 volumes:
   postgres_data:
