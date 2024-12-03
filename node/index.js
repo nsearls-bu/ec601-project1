@@ -13,11 +13,16 @@ const main = async () => {
 
     await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
-            const value = JSON.parse(message.value)
-            if (value)
-              console.log(value.payload);
-            else
-              console.log(message);
+            const value = JSON.parse(message.value);
+            if (value) {
+              const payload = value.payload;
+              if (payload.before === null && payload.after) {
+                console.log('added', payload.after, `to ${payload.source.schema}.${payload.source.table}`);
+              } else if (payload.after === null && payload.before) {
+                console.log('deleted', payload.before, `from ${payload.source.schema}.${payload.source.table}`);
+              }
+            }
+            console.log('\n');
         }
     })
 }
